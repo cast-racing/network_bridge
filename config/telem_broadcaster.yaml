@@ -1,0 +1,65 @@
+/**/*:
+  ros__parameters:
+    ### 
+    ## Parameters for hardware-side network interface
+    ## ROS 2 topics from the car will be serialized and transmitted over UDP using the following parameters  
+    ###
+    
+    network_interface: "network_bridge::UdpInterface"
+
+    ### 
+    ## Parameters for ROS2->Network
+    ###
+
+    # The rate at which to send data over the network interface
+    # This could be set >= than publish rate if you wish to 
+    # get every message, or < if you wish to only sample the message.
+    default_rate: 100.0
+
+    # The level of compression to use when sending data over the network (1-22).
+    # Beware that small messages may actually expand with high compression.
+    # Higher compression levels are good for large messages when bandwidth is
+    # small.  Lower compression levels are good for smaller messages or in 
+    # cases where bandwidth is less limited than CPU.
+    # Launching with debug logging will show message size in bytes if you wish to tune this.
+    default_zstd_level: 3
+
+    # Whether to re-transmit data if a new ROS2 message has not been
+    # received within the topic rate.  Can be useful in unreliable 
+    # networks where you want to increase odds of getting every message.
+    publish_stale_data: False
+
+    # List all topics that are to be sent over the network interface
+    topics:
+      - "/tf"
+      - "/tf_static"
+      - "/controller/tracking/debug/brake"
+      - "/controller/tracking/debug/throttle"
+      - "/controller/tracking/debug/pos_error_x_B"
+      - "/controller/tracking/debug/pos_error_y_B"
+      - "/controller/tracking/debug/theta_error"
+      - "/controller/tracking/debug/u_steering"
+      - "/controller/tracking/debug/vel_cog_x_B"
+      - "/controller/tracking/debug/vel_cog_x_des_B"
+      - "/raptor/cmd"
+      - "/raptor/sensor/wheel/all"
+      - "/raptor/powertrain/report_1"
+      - "/trajectory/.*"
+      - "/state/lla"
+      - "/field/.*"
+      - "/flags/info"
+    
+    # Defaults can be overridden for all topics
+    # /MySpecialTopic:
+    #   rate: 2.0
+    #   zstd_level: 5
+    
+    # Namespace to be applied to subscribed topics
+    # subscribe_namespace: "/udp1"
+    
+    ### 
+    ## Parameters for Network->ROS2
+    ###
+
+    # namespace of published ros2 messages. Can be useful for testing.
+    # publish_namespace: "/udp1"

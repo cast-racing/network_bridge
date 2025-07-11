@@ -1,0 +1,14 @@
+/**/*:
+  ros__parameters:
+    network_interface: "network_bridge::UdpInterface"
+  
+    default_rate: 100.0
+
+    default_zstd_level: 3
+
+    publish_stale_data: False
+
+    # topics:
+    #   - "/MyDefaultTopic2"
+
+    publish_namespace: "/network_bridge"
