@@ -61,6 +61,7 @@ def generate_launch_description():
         executable='network_bridge',
         name=LaunchConfiguration('name'),
         output='screen',
+        # arguments=['--ros-args', '--log-level', 'debug'],
         parameters=[config,
                     {'UdpInterface.local_address': LaunchConfiguration('local_address')},
                     {'UdpInterface.remote_address': LaunchConfiguration('remote_address')},

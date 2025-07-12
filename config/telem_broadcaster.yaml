@@ -14,7 +14,7 @@
     # The rate at which to send data over the network interface
     # This could be set >= than publish rate if you wish to 
     # get every message, or < if you wish to only sample the message.
-    default_rate: 100.0
+    default_rate: 25.0
 
     # The level of compression to use when sending data over the network (1-22).
     # Beware that small messages may actually expand with high compression.
@@ -44,15 +44,33 @@
       - "/raptor/cmd"
       - "/raptor/sensor/wheel/all"
       - "/raptor/powertrain/report_1"
-      - "/trajectory/.*"
       - "/state/lla"
-      - "/field/.*"
-      - "/flags/info"
+      - "/trajectory/debug"
+      - "/trajectory/desired"
+      - "/trajectory/desired/lla"
+      - "/trajectory/desired_traj"
+      - "/trajectory/desired_vis"
+      - "/trajectory/field_speed"
+      - "/trajectory/max_speed"
+      - "/trajectory/max_speed_board"
+      - "/trajectory/mode/requested"
+      - "/trajectory/mpc_solution"
+      - "/trajectory/mpc_viz"
+      - "/trajectory/opponent_board"
+      - "/trajectory/opponent_viz"
+      - "/trajectory/state_machine_board"
+      # - "/trajectory/track_viz"
+      - "/trajectory/trajectory_board"
+      - "/trajectory/vehicle_state_board"
     
     # Defaults can be overridden for all topics
-    # /MySpecialTopic:
-    #   rate: 2.0
-    #   zstd_level: 5
+    # /trajectory/mpc_viz:
+    #   rate: 10.0
+    #   zstd_level: 22
+
+    # /trajectory/track_viz:
+    #   rate: 1.0
+    #   zstd_level: 22
     
     # Namespace to be applied to subscribed topics
     # subscribe_namespace: "/udp1"
