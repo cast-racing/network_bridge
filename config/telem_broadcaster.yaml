@@ -59,7 +59,7 @@
       - "/trajectory/opponent_board"
       - "/trajectory/opponent_viz"
       - "/trajectory/state_machine_board"
-      # - "/trajectory/track_viz"
+      - "/trajectory/track_viz"
       - "/trajectory/trajectory_board"
       - "/trajectory/vehicle_state_board"
     
