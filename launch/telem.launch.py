@@ -40,7 +40,7 @@ def generate_launch_description():
     )
 
     send_port_arg = DeclareLaunchArgument(
-        'receive_port',
+        'send_port',
         default_value='5001',
         description='Desired send port (must be receive port of remote)'
     )

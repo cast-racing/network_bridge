@@ -1,5 +1,4 @@
 import os
-import yaml
 
 from ament_index_python import get_package_share_directory
 
@@ -27,9 +26,9 @@ def generate_launch_description():
                     'name' : 'telem_broadcaster',
                     'config' : 'telem_broadcaster.yaml',
                     'local_address' : '127.0.0.1',
-                    'receive_port' : '5000',
-                    'remote_address' : '127.0.0.1',
-                    'send_port' : '5001',
+                    'receive_port' : '15991',
+                    'remote_address' : '100.95.88.121',
+                    'send_port' : '15990',
 
                 }.items()
         )
@@ -51,10 +50,10 @@ def generate_launch_description():
             launch_arguments={
                     'name' : 'telem_listener',
                     'config' : 'telem_listener.yaml',
-                    'local_address' : '127.0.0.1',
-                    'receive_port' : '5001',
+                    'local_address' : '100.95.88.121',
+                    'receive_port' : '15990',
                     'remote_address' : '127.0.0.1',
-                    'send_port' : '5000',
+                    'send_port' : '15991',
                 }.items()
         )
     ]
