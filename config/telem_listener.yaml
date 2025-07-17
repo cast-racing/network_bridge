@@ -11,4 +11,4 @@
     # topics:
     #   - "/MyDefaultTopic2"
 
-    publish_namespace: "/network_bridge"
+    # publish_namespace: "/network_bridge"
