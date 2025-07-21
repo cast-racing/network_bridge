@@ -62,6 +62,8 @@
       - "/trajectory/track_viz"
       - "/trajectory/trajectory_board"
       - "/trajectory/vehicle_state_board"
+      - "/sensors/manager/imu_mix.linear_acceleration.x"
+      - "/sensors/manager/imu_mix.linear_acceleration.y"
     
     # Defaults can be overridden for all topics
     # /trajectory/mpc_viz:
