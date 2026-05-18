@@ -85,3 +85,9 @@
 
     # namespace of published ros2 messages. Can be useful for testing.
     # publish_namespace: "/udp1"
+
+    service_clients:
+      - "/set_max_car_speed"
+
+    "/set_max_car_speed.type": "iac_msgs/srv/SetFloat32"
+    "/set_max_car_speed.remote_name": "/set_max_car_speed"

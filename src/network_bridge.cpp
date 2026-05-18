@@ -30,12 +30,66 @@ SOFTWARE.
 #include <span>
 #include <fstream>
 #include <bit>
+#include <array>
 
 #include <rclcpp/serialization.hpp>
 #include <pluginlib/class_loader.hpp>
 #include <std_msgs/msg/string.hpp>
 
 #include "network_interfaces/network_interface_base.hpp"
+
+namespace
+{
+constexpr char kServiceRequestPacket[] = "__network_bridge_service_request__";
+constexpr char kServiceResponsePacket[] = "__network_bridge_service_response__";
+constexpr char kSetFloat32Type[] = "iac_msgs/srv/SetFloat32";
+
+template<typename T>
+void append_pod(std::vector<uint8_t> & buffer, const T & value)
+{
+  const auto bytes = std::bit_cast<std::array<uint8_t, sizeof(T)>>(value);
+  buffer.insert(buffer.end(), bytes.begin(), bytes.end());
+}
+
+template<typename T>
+bool read_pod(std::span<const uint8_t> payload, size_t & offset, T & value)
+{
+  if (offset + sizeof(T) > payload.size()) {
+    return false;
+  }
+  std::array<uint8_t, sizeof(T)> bytes{};
+  std::copy(
+    payload.begin() + static_cast<std::ptrdiff_t>(offset),
+    payload.begin() + static_cast<std::ptrdiff_t>(offset + sizeof(T)),
+    bytes.begin());
+  value = std::bit_cast<T>(bytes);
+  offset += sizeof(T);
+  return true;
+}
+
+void append_string(std::vector<uint8_t> & buffer, const std::string & value)
+{
+  const uint32_t size = static_cast<uint32_t>(value.size());
+  append_pod(buffer, size);
+  buffer.insert(buffer.end(), value.begin(), value.end());
+}
+
+bool read_string(std::span<const uint8_t> payload, size_t & offset, std::string & value)
+{
+  uint32_t size = 0;
+  if (!read_pod(payload, offset, size)) {
+    return false;
+  }
+  if (offset + size > payload.size()) {
+    return false;
+  }
+  value.assign(
+    reinterpret_cast<const char *>(payload.data() + offset),
+    static_cast<size_t>(size));
+  offset += size;
+  return true;
+}
+}  // namespace
 
 NetworkBridge::NetworkBridge(const std::string & node_name)
 : Node(node_name),
@@ -44,6 +98,7 @@ NetworkBridge::NetworkBridge(const std::string & node_name)
 void NetworkBridge::initialize()
 {
   load_parameters();
+  load_service_parameters();
   load_network_interface();
   network_interface_->open();
 }
@@ -204,6 +259,11 @@ void NetworkBridge::receive_data(std::span<const uint8_t> data)
     "Decompressed data size: %lu", decompressed_data.size());
   RCLCPP_DEBUG(this->get_logger(), "Delay: %f ms", delay * 1000);
 
+  if (topic == kServiceRequestPacket || topic == kServiceResponsePacket) {
+    handle_service_packet(topic, payload);
+    return;
+  }
+
   if (publishers_.find(topic) == publishers_.end()) {
     // Create a QoS configuration with reliability and durability settings
     rclcpp::QoS qos(10);
@@ -267,12 +327,339 @@ void NetworkBridge::send_data(std::shared_ptr<SubscriptionManager> manager)
   }
 
   // Send data
-  network_interface_->write(compressed_data);
+  {
+    std::lock_guard<std::mutex> lock(network_write_mutex_);
+    network_interface_->write(compressed_data);
+  }
   auto end = std::chrono::system_clock::now();
   RCLCPP_DEBUG(
     this->get_logger(),
     "Send time: %f ms",
     std::chrono::duration<double, std::milli>(end - now).count());
+}
+
+void NetworkBridge::send_service_packet(
+  const std::string & packet_kind, const std::vector<uint8_t> & payload)
+{
+  auto header = create_header(packet_kind, "network_bridge/ServicePacket");
+
+  std::vector<uint8_t> message;
+  message.reserve(header.size() + payload.size());
+  message.insert(message.end(), header.begin(), header.end());
+  message.insert(message.end(), payload.begin(), payload.end());
+
+  std::vector<uint8_t> compressed_data;
+  try {
+    compress(message, compressed_data, 3);
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "Service packet compression failed: %s", e.what());
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(network_write_mutex_);
+    network_interface_->write(compressed_data);
+  }
+}
+
+void NetworkBridge::handle_service_packet(
+  const std::string & packet_kind, std::span<const uint8_t> payload)
+{
+  if (packet_kind == kServiceRequestPacket) {
+    handle_set_float32_request(payload);
+  } else if (packet_kind == kServiceResponsePacket) {
+    handle_set_float32_response(payload);
+  }
+}
+
+void NetworkBridge::load_service_parameters()
+{
+  this->declare_parameter<std::vector<std::string>>(
+    "service_servers", std::vector<std::string>{});
+  this->declare_parameter<std::vector<std::string>>(
+    "service_clients", std::vector<std::string>{});
+
+  std::vector<std::string> service_servers;
+  std::vector<std::string> service_clients;
+  this->get_parameter("service_servers", service_servers);
+  this->get_parameter("service_clients", service_clients);
+
+  for (const auto & service_name : service_servers) {
+    const std::string type_param = service_name + ".type";
+    const std::string remote_param = service_name + ".remote_name";
+    const std::string timeout_param = service_name + ".timeout_ms";
+
+    this->declare_parameter<std::string>(type_param, "");
+    this->declare_parameter<std::string>(remote_param, service_name);
+    this->declare_parameter<int>(timeout_param, 1000);
+
+    std::string service_type;
+    std::string remote_name;
+    int timeout_ms = 1000;
+    this->get_parameter(type_param, service_type);
+    this->get_parameter(remote_param, remote_name);
+    this->get_parameter(timeout_param, timeout_ms);
+
+    if (service_type != kSetFloat32Type) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Service bridge for %s uses unsupported type %s. Supported type: %s",
+        service_name.c_str(), service_type.c_str(), kSetFloat32Type);
+      continue;
+    }
+    setup_set_float32_server_bridge(service_name, remote_name, timeout_ms);
+  }
+
+  for (const auto & service_name : service_clients) {
+    const std::string type_param = service_name + ".type";
+    const std::string remote_param = service_name + ".remote_name";
+
+    this->declare_parameter<std::string>(type_param, "");
+    this->declare_parameter<std::string>(remote_param, service_name);
+
+    std::string service_type;
+    std::string remote_name;
+    this->get_parameter(type_param, service_type);
+    this->get_parameter(remote_param, remote_name);
+
+    if (service_type != kSetFloat32Type) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Service bridge for %s uses unsupported type %s. Supported type: %s",
+        service_name.c_str(), service_type.c_str(), kSetFloat32Type);
+      continue;
+    }
+    setup_set_float32_client_bridge(service_name, remote_name);
+  }
+}
+
+void NetworkBridge::setup_set_float32_server_bridge(
+  const std::string & service_name, const std::string & remote_name,
+  int timeout_ms)
+{
+  SetFloat32ServerBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.timeout_ms = timeout_ms;
+
+  bridge.server = this->create_service<iac_msgs::srv::SetFloat32>(
+    service_name,
+    [this, service_name](
+      const std::shared_ptr<iac_msgs::srv::SetFloat32::Request> request,
+      std::shared_ptr<iac_msgs::srv::SetFloat32::Response> response) {
+      auto bridge_it = std::find_if(
+        set_float32_server_bridges_.begin(),
+        set_float32_server_bridges_.end(),
+        [&service_name](const auto & bridge_item) {
+          return bridge_item.service_name == service_name;
+        });
+      if (bridge_it == set_float32_server_bridges_.end()) {
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "No service bridge config found for %s", service_name.c_str());
+        response->success = false;
+        return;
+      }
+
+      bool success = false;
+      response->success = call_remote_set_float32(*bridge_it, request->data, success) && success;
+    });
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service server bridge: %s -> %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kSetFloat32Type);
+
+  set_float32_server_bridges_.push_back(bridge);
+}
+
+void NetworkBridge::setup_set_float32_client_bridge(
+  const std::string & service_name, const std::string & remote_name)
+{
+  SetFloat32ClientBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.client = this->create_client<iac_msgs::srv::SetFloat32>(remote_name);
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service client bridge: %s -> local %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kSetFloat32Type);
+
+  set_float32_client_bridges_.push_back(bridge);
+}
+
+bool NetworkBridge::call_remote_set_float32(
+  const SetFloat32ServerBridge & bridge, float data, bool & success)
+{
+  uint64_t request_id = 0;
+  auto pending = std::make_shared<PendingSetFloat32Response>();
+  {
+    std::lock_guard<std::mutex> lock(pending_set_float32_mutex_);
+    request_id = next_service_request_id_++;
+    pending_set_float32_responses_[request_id] = pending;
+  }
+
+  std::vector<uint8_t> payload;
+  append_string(payload, kSetFloat32Type);
+  append_string(payload, bridge.remote_name);
+  append_pod(payload, request_id);
+  append_pod(payload, data);
+  send_service_packet(kServiceRequestPacket, payload);
+
+  std::unique_lock<std::mutex> lock(pending->mutex);
+  const bool completed = pending->condition.wait_for(
+    lock,
+    std::chrono::milliseconds(bridge.timeout_ms),
+    [&pending]() {return pending->completed;});
+
+  {
+    std::lock_guard<std::mutex> pending_lock(pending_set_float32_mutex_);
+    pending_set_float32_responses_.erase(request_id);
+  }
+
+  if (!completed) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Timed out waiting for bridged service response from %s",
+      bridge.remote_name.c_str());
+    return false;
+  }
+
+  success = pending->success;
+  return true;
+}
+
+void NetworkBridge::handle_set_float32_request(std::span<const uint8_t> payload)
+{
+  size_t offset = 0;
+  std::string service_type;
+  std::string service_name;
+  uint64_t request_id = 0;
+  float data = 0.0f;
+
+  if (!read_string(payload, offset, service_type) ||
+    !read_string(payload, offset, service_name) ||
+    !read_pod(payload, offset, request_id) ||
+    !read_pod(payload, offset, data))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Malformed service request packet");
+    return;
+  }
+
+  if (service_type != kSetFloat32Type) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Received unsupported service request type %s", service_type.c_str());
+    return;
+  }
+
+  auto bridge_it = std::find_if(
+    set_float32_client_bridges_.begin(),
+    set_float32_client_bridges_.end(),
+    [&service_name](const auto & bridge) {
+      return bridge.service_name == service_name || bridge.remote_name == service_name;
+    });
+
+  if (bridge_it == set_float32_client_bridges_.end()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "No local client bridge configured for service %s", service_name.c_str());
+    std::vector<uint8_t> response_payload;
+    append_string(response_payload, kSetFloat32Type);
+    append_string(response_payload, service_name);
+    append_pod(response_payload, request_id);
+    append_pod(response_payload, static_cast<uint8_t>(0));
+    send_service_packet(kServiceResponsePacket, response_payload);
+    return;
+  }
+
+  auto request = std::make_shared<iac_msgs::srv::SetFloat32::Request>();
+  request->data = data;
+
+  auto client = bridge_it->client;
+  if (!client->service_is_ready()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Local service %s is not ready", bridge_it->remote_name.c_str());
+    std::vector<uint8_t> response_payload;
+    append_string(response_payload, kSetFloat32Type);
+    append_string(response_payload, service_name);
+    append_pod(response_payload, request_id);
+    append_pod(response_payload, static_cast<uint8_t>(0));
+    send_service_packet(kServiceResponsePacket, response_payload);
+    return;
+  }
+
+  client->async_send_request(
+    request,
+    [this, service_name, request_id](
+      rclcpp::Client<iac_msgs::srv::SetFloat32>::SharedFuture future) {
+      bool success = false;
+      try {
+        success = future.get()->success;
+      } catch (const std::exception & e) {
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "Local bridged service call failed: %s", e.what());
+      }
+
+      std::vector<uint8_t> response_payload;
+      append_string(response_payload, kSetFloat32Type);
+      append_string(response_payload, service_name);
+      append_pod(response_payload, request_id);
+      append_pod(response_payload, static_cast<uint8_t>(success ? 1 : 0));
+      send_service_packet(kServiceResponsePacket, response_payload);
+    });
+}
+
+void NetworkBridge::handle_set_float32_response(std::span<const uint8_t> payload)
+{
+  size_t offset = 0;
+  std::string service_type;
+  std::string service_name;
+  uint64_t request_id = 0;
+  uint8_t success = 0;
+
+  if (!read_string(payload, offset, service_type) ||
+    !read_string(payload, offset, service_name) ||
+    !read_pod(payload, offset, request_id) ||
+    !read_pod(payload, offset, success))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Malformed service response packet");
+    return;
+  }
+
+  (void)service_name;
+
+  if (service_type != kSetFloat32Type) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Received unsupported service response type %s", service_type.c_str());
+    return;
+  }
+
+  std::shared_ptr<PendingSetFloat32Response> pending;
+  {
+    std::lock_guard<std::mutex> lock(pending_set_float32_mutex_);
+    auto it = pending_set_float32_responses_.find(request_id);
+    if (it == pending_set_float32_responses_.end()) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Received response for unknown service request id %lu", request_id);
+      return;
+    }
+    pending = it->second;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(pending->mutex);
+    pending->success = success != 0;
+    pending->completed = true;
+  }
+  pending->condition.notify_one();
 }
 
 std::vector<uint8_t> NetworkBridge::create_header(

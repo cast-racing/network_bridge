@@ -30,7 +30,11 @@ SOFTWARE.
 #include <string>
 #include <memory>
 #include <map>
+#include <condition_variable>
+#include <mutex>
+#include <unordered_map>
 #include <rclcpp/rclcpp.hpp>
+#include <iac_msgs/srv/set_float32.hpp>
 
 #include "network_bridge/subscription_manager.hpp"
 #include "network_interfaces/network_interface_base.hpp"
@@ -86,6 +90,21 @@ protected:
    * @param manager A shared pointer to the SubscriptionManager object.
    */
   virtual void send_data(std::shared_ptr<SubscriptionManager> manager);
+
+  /**
+   * @brief Sends a service bridge packet over the network interface.
+   *
+   * Service packets reuse the same compression/header path as topic messages,
+   * but are routed internally by reserved bridge topics.
+   */
+  virtual void send_service_packet(
+    const std::string & packet_kind, const std::vector<uint8_t> & payload);
+
+  /**
+   * @brief Handles a received service request or response packet.
+   */
+  virtual void handle_service_packet(
+    const std::string & packet_kind, std::span<const uint8_t> payload);
 
   /**
    * @brief Creates a header for the message.
@@ -174,4 +193,46 @@ protected:
    * @brief the namespace for the publishers.
    */
   std::string publish_namespace_;
+
+  struct SetFloat32ServerBridge
+  {
+    std::string service_name;
+    std::string remote_name;
+    int timeout_ms;
+    rclcpp::Service<iac_msgs::srv::SetFloat32>::SharedPtr server;
+  };
+
+  struct SetFloat32ClientBridge
+  {
+    std::string service_name;
+    std::string remote_name;
+    rclcpp::Client<iac_msgs::srv::SetFloat32>::SharedPtr client;
+  };
+
+  struct PendingSetFloat32Response
+  {
+    bool completed = false;
+    bool success = false;
+    std::mutex mutex;
+    std::condition_variable condition;
+  };
+
+  void load_service_parameters();
+  void setup_set_float32_server_bridge(
+    const std::string & service_name, const std::string & remote_name,
+    int timeout_ms);
+  void setup_set_float32_client_bridge(
+    const std::string & service_name, const std::string & remote_name);
+  bool call_remote_set_float32(
+    const SetFloat32ServerBridge & bridge, float data, bool & success);
+  void handle_set_float32_request(std::span<const uint8_t> payload);
+  void handle_set_float32_response(std::span<const uint8_t> payload);
+
+  std::vector<SetFloat32ServerBridge> set_float32_server_bridges_;
+  std::vector<SetFloat32ClientBridge> set_float32_client_bridges_;
+  std::unordered_map<uint64_t, std::shared_ptr<PendingSetFloat32Response>>
+  pending_set_float32_responses_;
+  std::mutex pending_set_float32_mutex_;
+  std::mutex network_write_mutex_;
+  uint64_t next_service_request_id_ = 1;
 };

@@ -12,3 +12,10 @@
     #   - "/MyDefaultTopic2"
 
     # publish_namespace: "/network_bridge"
+
+    service_servers:
+      - "/set_max_car_speed"
+
+    "/set_max_car_speed.type": "iac_msgs/srv/SetFloat32"
+    "/set_max_car_speed.remote_name": "/set_max_car_speed"
+    "/set_max_car_speed.timeout_ms": 1000
