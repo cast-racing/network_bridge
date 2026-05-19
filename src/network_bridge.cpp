@@ -43,6 +43,9 @@ namespace
 constexpr char kServiceRequestPacket[] = "__network_bridge_service_request__";
 constexpr char kServiceResponsePacket[] = "__network_bridge_service_response__";
 constexpr char kSetFloat32Type[] = "iac_msgs/srv/SetFloat32";
+constexpr char kSetStringType[] = "iac_msgs/srv/SetString";
+constexpr char kGhostCarCommandType[] = "iac_msgs/srv/GhostCarCommand";
+constexpr char kOpponentStatesCommandType[] = "iac_msgs/srv/OpponentStatesCommand";
 
 template<typename T>
 void append_pod(std::vector<uint8_t> & buffer, const T & value)
@@ -88,6 +91,31 @@ bool read_string(std::span<const uint8_t> payload, size_t & offset, std::string 
     static_cast<size_t>(size));
   offset += size;
   return true;
+}
+template<typename MsgT>
+std::vector<uint8_t> serialize_ros_msg(const MsgT & msg)
+{
+  rclcpp::Serialization<MsgT> serializer;
+  rclcpp::SerializedMessage serialized;
+  serializer.serialize_message(&msg, &serialized);
+  const auto & rcl = serialized.get_rcl_serialized_message();
+  return std::vector<uint8_t>(rcl.buffer, rcl.buffer + rcl.buffer_length);
+}
+
+template<typename MsgT>
+bool deserialize_ros_msg(std::span<const uint8_t> data, MsgT & msg)
+{
+  rclcpp::Serialization<MsgT> serializer;
+  rclcpp::SerializedMessage serialized(data.size());
+  auto & rcl = serialized.get_rcl_serialized_message();
+  std::copy(data.begin(), data.end(), rcl.buffer);
+  rcl.buffer_length = data.size();
+  try {
+    serializer.deserialize_message(&serialized, &msg);
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
 }
 }  // namespace
 
@@ -367,10 +395,31 @@ void NetworkBridge::send_service_packet(
 void NetworkBridge::handle_service_packet(
   const std::string & packet_kind, std::span<const uint8_t> payload)
 {
-  if (packet_kind == kServiceRequestPacket) {
-    handle_set_float32_request(payload);
-  } else if (packet_kind == kServiceResponsePacket) {
-    handle_set_float32_response(payload);
+  size_t offset = 0;
+  std::string service_type;
+  if (!read_string(payload, offset, service_type)) {
+    RCLCPP_ERROR(this->get_logger(), "Malformed service packet: cannot read type");
+    return;
+  }
+
+  const bool is_request = (packet_kind == kServiceRequestPacket);
+
+  if (service_type == kSetFloat32Type) {
+    if (is_request) handle_set_float32_request(payload);
+    else handle_set_float32_response(payload);
+  } else if (service_type == kSetStringType) {
+    if (is_request) handle_set_string_request(payload);
+    else handle_new_service_response(payload);
+  } else if (service_type == kGhostCarCommandType) {
+    if (is_request) handle_ghost_car_command_request(payload);
+    else handle_new_service_response(payload);
+  } else if (service_type == kOpponentStatesCommandType) {
+    if (is_request) handle_opponent_states_command_request(payload);
+    else handle_new_service_response(payload);
+  } else {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Received service packet with unknown type: %s", service_type.c_str());
   }
 }
 
@@ -402,14 +451,21 @@ void NetworkBridge::load_service_parameters()
     this->get_parameter(remote_param, remote_name);
     this->get_parameter(timeout_param, timeout_ms);
 
-    if (service_type != kSetFloat32Type) {
+    if (service_type == kSetFloat32Type) {
+      setup_set_float32_server_bridge(service_name, remote_name, timeout_ms);
+    } else if (service_type == kSetStringType) {
+      setup_set_string_server_bridge(service_name, remote_name, timeout_ms);
+    } else if (service_type == kGhostCarCommandType) {
+      setup_ghost_car_command_server_bridge(service_name, remote_name, timeout_ms);
+    } else if (service_type == kOpponentStatesCommandType) {
+      setup_opponent_states_command_server_bridge(service_name, remote_name, timeout_ms);
+    } else {
       RCLCPP_WARN(
         this->get_logger(),
-        "Service bridge for %s uses unsupported type %s. Supported type: %s",
-        service_name.c_str(), service_type.c_str(), kSetFloat32Type);
+        "Service bridge for %s uses unsupported type %s",
+        service_name.c_str(), service_type.c_str());
       continue;
     }
-    setup_set_float32_server_bridge(service_name, remote_name, timeout_ms);
   }
 
   for (const auto & service_name : service_clients) {
@@ -424,14 +480,21 @@ void NetworkBridge::load_service_parameters()
     this->get_parameter(type_param, service_type);
     this->get_parameter(remote_param, remote_name);
 
-    if (service_type != kSetFloat32Type) {
+    if (service_type == kSetFloat32Type) {
+      setup_set_float32_client_bridge(service_name, remote_name);
+    } else if (service_type == kSetStringType) {
+      setup_set_string_client_bridge(service_name, remote_name);
+    } else if (service_type == kGhostCarCommandType) {
+      setup_ghost_car_command_client_bridge(service_name, remote_name);
+    } else if (service_type == kOpponentStatesCommandType) {
+      setup_opponent_states_command_client_bridge(service_name, remote_name);
+    } else {
       RCLCPP_WARN(
         this->get_logger(),
-        "Service bridge for %s uses unsupported type %s. Supported type: %s",
-        service_name.c_str(), service_type.c_str(), kSetFloat32Type);
+        "Service bridge for %s uses unsupported type %s",
+        service_name.c_str(), service_type.c_str());
       continue;
     }
-    setup_set_float32_client_bridge(service_name, remote_name);
   }
 }
 
@@ -756,6 +819,375 @@ void NetworkBridge::decompress(
   if (ZSTD_isError(decompressed_result)) {
     throw std::runtime_error(ZSTD_getErrorName(decompressed_result));
   }
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+void NetworkBridge::send_failure_response(
+  const std::string & type, const std::string & name, uint64_t request_id)
+{
+  std::vector<uint8_t> payload;
+  append_string(payload, type);
+  append_string(payload, name);
+  append_pod(payload, request_id);
+  append_pod(payload, static_cast<uint8_t>(0));
+  send_service_packet(kServiceResponsePacket, payload);
+}
+
+void NetworkBridge::handle_new_service_response(std::span<const uint8_t> payload)
+{
+  size_t offset = 0;
+  std::string service_type, service_name;
+  uint64_t request_id = 0;
+  uint8_t success = 0;
+
+  if (!read_string(payload, offset, service_type) ||
+    !read_string(payload, offset, service_name) ||
+    !read_pod(payload, offset, request_id) ||
+    !read_pod(payload, offset, success))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Malformed service response packet");
+    return;
+  }
+  (void)service_name;
+
+  std::shared_ptr<PendingServiceResponse> pending;
+  {
+    std::lock_guard<std::mutex> lock(pending_service_mutex_);
+    auto it = pending_service_responses_.find(request_id);
+    if (it == pending_service_responses_.end()) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Received response for unknown service request id %lu", request_id);
+      return;
+    }
+    pending = it->second;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(pending->mutex);
+    pending->success = success != 0;
+    pending->completed = true;
+  }
+  pending->condition.notify_one();
+}
+
+// ─── Member function templates (ground-station call side + car receive side) ──
+
+template<typename SrvT>
+bool NetworkBridge::call_remote_service(
+  const std::string & type_name,
+  const std::string & remote_name,
+  int timeout_ms,
+  const typename SrvT::Request & request)
+{
+  auto serialized = serialize_ros_msg(request);
+
+  uint64_t request_id = 0;
+  auto pending = std::make_shared<PendingServiceResponse>();
+  {
+    std::lock_guard<std::mutex> lock(pending_service_mutex_);
+    request_id = next_service_request_id_++;
+    pending_service_responses_[request_id] = pending;
+  }
+
+  std::vector<uint8_t> packet;
+  append_string(packet, type_name);
+  append_string(packet, remote_name);
+  append_pod(packet, request_id);
+  append_pod(packet, static_cast<uint32_t>(serialized.size()));
+  packet.insert(packet.end(), serialized.begin(), serialized.end());
+  send_service_packet(kServiceRequestPacket, packet);
+
+  std::unique_lock<std::mutex> lock(pending->mutex);
+  const bool completed = pending->condition.wait_for(
+    lock,
+    std::chrono::milliseconds(timeout_ms),
+    [&pending]() {return pending->completed;});
+
+  {
+    std::lock_guard<std::mutex> pending_lock(pending_service_mutex_);
+    pending_service_responses_.erase(request_id);
+  }
+
+  if (!completed) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Timed out waiting for bridged service response from %s", remote_name.c_str());
+    return false;
+  }
+  return pending->success;
+}
+
+template<typename SrvT, typename ClientBridgeT>
+void NetworkBridge::do_handle_serialized_service_request(
+  const std::string & type_name,
+  std::span<const uint8_t> payload,
+  std::vector<ClientBridgeT> & client_bridges)
+{
+  size_t offset = 0;
+  std::string service_type, service_name;
+  uint64_t request_id = 0;
+  uint32_t serialized_size = 0;
+
+  if (!read_string(payload, offset, service_type) ||
+    !read_string(payload, offset, service_name) ||
+    !read_pod(payload, offset, request_id) ||
+    !read_pod(payload, offset, serialized_size) ||
+    offset + serialized_size > payload.size())
+  {
+    RCLCPP_ERROR(this->get_logger(), "Malformed %s request packet", type_name.c_str());
+    return;
+  }
+
+  std::span<const uint8_t> serialized_bytes(payload.data() + offset, serialized_size);
+  typename SrvT::Request request;
+  if (!deserialize_ros_msg(serialized_bytes, request)) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to deserialize %s request", type_name.c_str());
+    send_failure_response(type_name, service_name, request_id);
+    return;
+  }
+
+  auto bridge_it = std::find_if(
+    client_bridges.begin(), client_bridges.end(),
+    [&service_name](const auto & b) {
+      return b.service_name == service_name || b.remote_name == service_name;
+    });
+
+  if (bridge_it == client_bridges.end()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "No local client bridge configured for service %s", service_name.c_str());
+    send_failure_response(type_name, service_name, request_id);
+    return;
+  }
+
+  if (!bridge_it->client->service_is_ready()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Local service %s is not ready", bridge_it->remote_name.c_str());
+    send_failure_response(type_name, service_name, request_id);
+    return;
+  }
+
+  auto req = std::make_shared<typename SrvT::Request>(request);
+  bridge_it->client->async_send_request(
+    req,
+    [this, type_name, service_name, request_id](
+      typename rclcpp::Client<SrvT>::SharedFuture future) {
+      bool success = false;
+      try {
+        success = future.get()->success;
+      } catch (const std::exception & e) {
+        RCLCPP_ERROR(this->get_logger(), "Bridged service call failed: %s", e.what());
+      }
+      std::vector<uint8_t> response_payload;
+      append_string(response_payload, type_name);
+      append_string(response_payload, service_name);
+      append_pod(response_payload, request_id);
+      append_pod(response_payload, static_cast<uint8_t>(success ? 1 : 0));
+      send_service_packet(kServiceResponsePacket, response_payload);
+    });
+}
+
+// ─── SetString ────────────────────────────────────────────────────────────────
+
+void NetworkBridge::setup_set_string_server_bridge(
+  const std::string & service_name, const std::string & remote_name, int timeout_ms)
+{
+  SetStringServerBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.timeout_ms = timeout_ms;
+
+  bridge.server = this->create_service<iac_msgs::srv::SetString>(
+    service_name,
+    [this, service_name](
+      const std::shared_ptr<iac_msgs::srv::SetString::Request> request,
+      std::shared_ptr<iac_msgs::srv::SetString::Response> response) {
+      auto it = std::find_if(
+        set_string_server_bridges_.begin(), set_string_server_bridges_.end(),
+        [&service_name](const auto & b) {return b.service_name == service_name;});
+      if (it == set_string_server_bridges_.end()) {
+        response->success = false;
+        return;
+      }
+      bool success = false;
+      response->success = call_remote_set_string(*it, *request, success) && success;
+    });
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service server bridge: %s -> %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kSetStringType);
+
+  set_string_server_bridges_.push_back(bridge);
+}
+
+void NetworkBridge::setup_set_string_client_bridge(
+  const std::string & service_name, const std::string & remote_name)
+{
+  SetStringClientBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.client = this->create_client<iac_msgs::srv::SetString>(remote_name);
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service client bridge: %s -> local %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kSetStringType);
+
+  set_string_client_bridges_.push_back(bridge);
+}
+
+bool NetworkBridge::call_remote_set_string(
+  const SetStringServerBridge & bridge,
+  const iac_msgs::srv::SetString::Request & request,
+  bool & success)
+{
+  success = call_remote_service<iac_msgs::srv::SetString>(
+    kSetStringType, bridge.remote_name, bridge.timeout_ms, request);
+  return true;
+}
+
+void NetworkBridge::handle_set_string_request(std::span<const uint8_t> payload)
+{
+  do_handle_serialized_service_request<iac_msgs::srv::SetString>(
+    kSetStringType, payload, set_string_client_bridges_);
+}
+
+// ─── GhostCarCommand ──────────────────────────────────────────────────────────
+
+void NetworkBridge::setup_ghost_car_command_server_bridge(
+  const std::string & service_name, const std::string & remote_name, int timeout_ms)
+{
+  GhostCarCommandServerBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.timeout_ms = timeout_ms;
+
+  bridge.server = this->create_service<iac_msgs::srv::GhostCarCommand>(
+    service_name,
+    [this, service_name](
+      const std::shared_ptr<iac_msgs::srv::GhostCarCommand::Request> request,
+      std::shared_ptr<iac_msgs::srv::GhostCarCommand::Response> response) {
+      auto it = std::find_if(
+        ghost_car_command_server_bridges_.begin(), ghost_car_command_server_bridges_.end(),
+        [&service_name](const auto & b) {return b.service_name == service_name;});
+      if (it == ghost_car_command_server_bridges_.end()) {
+        response->success = false;
+        return;
+      }
+      bool success = false;
+      response->success = call_remote_ghost_car_command(*it, *request, success) && success;
+    });
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service server bridge: %s -> %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kGhostCarCommandType);
+
+  ghost_car_command_server_bridges_.push_back(bridge);
+}
+
+void NetworkBridge::setup_ghost_car_command_client_bridge(
+  const std::string & service_name, const std::string & remote_name)
+{
+  GhostCarCommandClientBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.client = this->create_client<iac_msgs::srv::GhostCarCommand>(remote_name);
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service client bridge: %s -> local %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kGhostCarCommandType);
+
+  ghost_car_command_client_bridges_.push_back(bridge);
+}
+
+bool NetworkBridge::call_remote_ghost_car_command(
+  const GhostCarCommandServerBridge & bridge,
+  const iac_msgs::srv::GhostCarCommand::Request & request,
+  bool & success)
+{
+  success = call_remote_service<iac_msgs::srv::GhostCarCommand>(
+    kGhostCarCommandType, bridge.remote_name, bridge.timeout_ms, request);
+  return true;
+}
+
+void NetworkBridge::handle_ghost_car_command_request(std::span<const uint8_t> payload)
+{
+  do_handle_serialized_service_request<iac_msgs::srv::GhostCarCommand>(
+    kGhostCarCommandType, payload, ghost_car_command_client_bridges_);
+}
+
+// ─── OpponentStatesCommand ────────────────────────────────────────────────────
+
+void NetworkBridge::setup_opponent_states_command_server_bridge(
+  const std::string & service_name, const std::string & remote_name, int timeout_ms)
+{
+  OpponentStatesCommandServerBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.timeout_ms = timeout_ms;
+
+  bridge.server = this->create_service<iac_msgs::srv::OpponentStatesCommand>(
+    service_name,
+    [this, service_name](
+      const std::shared_ptr<iac_msgs::srv::OpponentStatesCommand::Request> request,
+      std::shared_ptr<iac_msgs::srv::OpponentStatesCommand::Response> response) {
+      auto it = std::find_if(
+        opponent_states_command_server_bridges_.begin(),
+        opponent_states_command_server_bridges_.end(),
+        [&service_name](const auto & b) {return b.service_name == service_name;});
+      if (it == opponent_states_command_server_bridges_.end()) {
+        response->success = false;
+        return;
+      }
+      bool success = false;
+      response->success =
+        call_remote_opponent_states_command(*it, *request, success) && success;
+    });
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service server bridge: %s -> %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kOpponentStatesCommandType);
+
+  opponent_states_command_server_bridges_.push_back(bridge);
+}
+
+void NetworkBridge::setup_opponent_states_command_client_bridge(
+  const std::string & service_name, const std::string & remote_name)
+{
+  OpponentStatesCommandClientBridge bridge;
+  bridge.service_name = service_name;
+  bridge.remote_name = remote_name;
+  bridge.client = this->create_client<iac_msgs::srv::OpponentStatesCommand>(remote_name);
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Service client bridge: %s -> local %s (%s)",
+    service_name.c_str(), remote_name.c_str(), kOpponentStatesCommandType);
+
+  opponent_states_command_client_bridges_.push_back(bridge);
+}
+
+bool NetworkBridge::call_remote_opponent_states_command(
+  const OpponentStatesCommandServerBridge & bridge,
+  const iac_msgs::srv::OpponentStatesCommand::Request & request,
+  bool & success)
+{
+  success = call_remote_service<iac_msgs::srv::OpponentStatesCommand>(
+    kOpponentStatesCommandType, bridge.remote_name, bridge.timeout_ms, request);
+  return true;
+}
+
+void NetworkBridge::handle_opponent_states_command_request(std::span<const uint8_t> payload)
+{
+  do_handle_serialized_service_request<iac_msgs::srv::OpponentStatesCommand>(
+    kOpponentStatesCommandType, payload, opponent_states_command_client_bridges_);
 }
 
 int main(int argc, char ** argv)

@@ -35,6 +35,9 @@ SOFTWARE.
 #include <unordered_map>
 #include <rclcpp/rclcpp.hpp>
 #include <iac_msgs/srv/set_float32.hpp>
+#include <iac_msgs/srv/set_string.hpp>
+#include <iac_msgs/srv/ghost_car_command.hpp>
+#include <iac_msgs/srv/opponent_states_command.hpp>
 
 #include "network_bridge/subscription_manager.hpp"
 #include "network_interfaces/network_interface_base.hpp"
@@ -217,6 +220,51 @@ protected:
     std::condition_variable condition;
   };
 
+  // Shared pending response struct for all new service types
+  struct PendingServiceResponse
+  {
+    bool completed = false;
+    bool success = false;
+    std::mutex mutex;
+    std::condition_variable condition;
+  };
+
+  struct SetStringServerBridge
+  {
+    std::string service_name, remote_name;
+    int timeout_ms;
+    rclcpp::Service<iac_msgs::srv::SetString>::SharedPtr server;
+  };
+  struct SetStringClientBridge
+  {
+    std::string service_name, remote_name;
+    rclcpp::Client<iac_msgs::srv::SetString>::SharedPtr client;
+  };
+
+  struct GhostCarCommandServerBridge
+  {
+    std::string service_name, remote_name;
+    int timeout_ms;
+    rclcpp::Service<iac_msgs::srv::GhostCarCommand>::SharedPtr server;
+  };
+  struct GhostCarCommandClientBridge
+  {
+    std::string service_name, remote_name;
+    rclcpp::Client<iac_msgs::srv::GhostCarCommand>::SharedPtr client;
+  };
+
+  struct OpponentStatesCommandServerBridge
+  {
+    std::string service_name, remote_name;
+    int timeout_ms;
+    rclcpp::Service<iac_msgs::srv::OpponentStatesCommand>::SharedPtr server;
+  };
+  struct OpponentStatesCommandClientBridge
+  {
+    std::string service_name, remote_name;
+    rclcpp::Client<iac_msgs::srv::OpponentStatesCommand>::SharedPtr client;
+  };
+
   void load_service_parameters();
   void setup_set_float32_server_bridge(
     const std::string & service_name, const std::string & remote_name,
@@ -228,11 +276,69 @@ protected:
   void handle_set_float32_request(std::span<const uint8_t> payload);
   void handle_set_float32_response(std::span<const uint8_t> payload);
 
+  void setup_set_string_server_bridge(
+    const std::string & service_name, const std::string & remote_name, int timeout_ms);
+  void setup_set_string_client_bridge(
+    const std::string & service_name, const std::string & remote_name);
+  bool call_remote_set_string(
+    const SetStringServerBridge & bridge,
+    const iac_msgs::srv::SetString::Request & request, bool & success);
+  void handle_set_string_request(std::span<const uint8_t> payload);
+
+  void setup_ghost_car_command_server_bridge(
+    const std::string & service_name, const std::string & remote_name, int timeout_ms);
+  void setup_ghost_car_command_client_bridge(
+    const std::string & service_name, const std::string & remote_name);
+  bool call_remote_ghost_car_command(
+    const GhostCarCommandServerBridge & bridge,
+    const iac_msgs::srv::GhostCarCommand::Request & request, bool & success);
+  void handle_ghost_car_command_request(std::span<const uint8_t> payload);
+
+  void setup_opponent_states_command_server_bridge(
+    const std::string & service_name, const std::string & remote_name, int timeout_ms);
+  void setup_opponent_states_command_client_bridge(
+    const std::string & service_name, const std::string & remote_name);
+  bool call_remote_opponent_states_command(
+    const OpponentStatesCommandServerBridge & bridge,
+    const iac_msgs::srv::OpponentStatesCommand::Request & request, bool & success);
+  void handle_opponent_states_command_request(std::span<const uint8_t> payload);
+
+  void handle_new_service_response(std::span<const uint8_t> payload);
+  void send_failure_response(
+    const std::string & type, const std::string & name, uint64_t request_id);
+
+  template<typename SrvT>
+  bool call_remote_service(
+    const std::string & type_name,
+    const std::string & remote_name,
+    int timeout_ms,
+    const typename SrvT::Request & request);
+
+  template<typename SrvT, typename ClientBridgeT>
+  void do_handle_serialized_service_request(
+    const std::string & type_name,
+    std::span<const uint8_t> payload,
+    std::vector<ClientBridgeT> & client_bridges);
+
   std::vector<SetFloat32ServerBridge> set_float32_server_bridges_;
   std::vector<SetFloat32ClientBridge> set_float32_client_bridges_;
   std::unordered_map<uint64_t, std::shared_ptr<PendingSetFloat32Response>>
   pending_set_float32_responses_;
   std::mutex pending_set_float32_mutex_;
+
+  std::vector<SetStringServerBridge> set_string_server_bridges_;
+  std::vector<SetStringClientBridge> set_string_client_bridges_;
+
+  std::vector<GhostCarCommandServerBridge> ghost_car_command_server_bridges_;
+  std::vector<GhostCarCommandClientBridge> ghost_car_command_client_bridges_;
+
+  std::vector<OpponentStatesCommandServerBridge> opponent_states_command_server_bridges_;
+  std::vector<OpponentStatesCommandClientBridge> opponent_states_command_client_bridges_;
+
+  std::unordered_map<uint64_t, std::shared_ptr<PendingServiceResponse>>
+  pending_service_responses_;
+  std::mutex pending_service_mutex_;
+
   std::mutex network_write_mutex_;
   uint64_t next_service_request_id_ = 1;
 };
