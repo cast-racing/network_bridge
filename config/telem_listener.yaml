@@ -8,8 +8,10 @@
 
     publish_stale_data: False
 
-    # topics:
-    #   - "/MyDefaultTopic2"
+    topics:
+      - "/trajectory/raceline_override"
+      - "/trajectory/state_override"
+      - "/ghost/request"
 
     # publish_namespace: "/network_bridge"
 
