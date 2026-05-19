@@ -95,6 +95,26 @@
 
     service_clients:
       - "/set_max_car_speed"
+      - "/ghost/request"
+      - "/trajectory/raceline_override"
+      - "/trajectory/state_override"
+      - "/trajectory/parameter_override"
+      - "/trajectory/opponent_states_request"
 
     "/set_max_car_speed.type": "iac_msgs/srv/SetFloat32"
     "/set_max_car_speed.remote_name": "/set_max_car_speed"
+
+    "/ghost/request.type": "iac_msgs/srv/GhostCarCommand"
+    "/ghost/request.remote_name": "/ghost/request"
+
+    "/trajectory/raceline_override.type": "iac_msgs/srv/SetFloat32"
+    "/trajectory/raceline_override.remote_name": "/trajectory/raceline_override"
+
+    "/trajectory/state_override.type": "iac_msgs/srv/SetString"
+    "/trajectory/state_override.remote_name": "/trajectory/state_override"
+
+    "/trajectory/parameter_override.type": "iac_msgs/srv/SetString"
+    "/trajectory/parameter_override.remote_name": "/trajectory/parameter_override"
+
+    "/trajectory/opponent_states_request.type": "iac_msgs/srv/OpponentStatesCommand"
+    "/trajectory/opponent_states_request.remote_name": "/trajectory/opponent_states_request"
