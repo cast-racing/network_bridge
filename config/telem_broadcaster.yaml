@@ -50,6 +50,7 @@
       - "/diagnostics/wheel_lock/rear_left"
       - "/diagnostics/wheel_lock/rear_right"
       - "/state/lla"
+      - "/state/odom_cov"
       - "/trajectory/debug"
       - "/trajectory/desired"
       - "/trajectory/desired/lla"

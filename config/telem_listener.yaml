@@ -11,6 +11,8 @@
     topics:
       - "/trajectory/raceline_override"
       - "/trajectory/state_override"
+      - "/trajectory/parameter_override"
+      - "/trajectory/opponent_states_request"
       - "/ghost/request"
 
     # publish_namespace: "/network_bridge"
