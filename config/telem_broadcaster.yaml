@@ -63,6 +63,7 @@
       - "/trajectory/mpc_solution"
       - "/trajectory/mpc_viz"
       - "/trajectory/opponent_board"
+      - "/trajectory/opponent_state_board"
       - "/trajectory/opponent_viz"
       - "/trajectory/state_machine_board"
       - "/trajectory/track_viz"
