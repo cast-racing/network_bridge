@@ -49,6 +49,7 @@
       - "/diagnostics/wheel_lock/front_right"
       - "/diagnostics/wheel_lock/rear_left"
       - "/diagnostics/wheel_lock/rear_right"
+      - "/field/lla"
       - "/field/pose"
       - "/field/pose/truth"
       - "/state/lla"
