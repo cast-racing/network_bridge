@@ -76,6 +76,7 @@ install(DIRECTORY
   config
   launch
   DESTINATION share/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
 )
 
 ament_package()
