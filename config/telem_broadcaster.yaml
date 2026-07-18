@@ -77,9 +77,11 @@
       - "/trajectory/trajectory_board"
       - "/trajectory/vehicle_state_board"
       - "/debug_markers"    # perception debug marker
+      - "/perception/camera/poses_markers/rear_surface"
+      - "/perception/camera/poses_markers/front"
+      - "/perception/camera/poses_markers/stereo_left"
       - "/front_opponent_indicator"
       - "/rear_opponent_indicator"
-      - "/perception/camera/poses_markers/stereo_left"
     
     # Defaults can be overridden for all topics
     # /trajectory/mpc_viz:
