@@ -35,9 +35,9 @@ SOFTWARE.
 #include <unordered_map>
 #include <rclcpp/rclcpp.hpp>
 #include <iac_msgs/srv/set_float32.hpp>
-#include <iac_msgs/srv/set_string.hpp>
-#include <iac_msgs/srv/ghost_car_command.hpp>
-#include <iac_msgs/srv/opponent_states_command.hpp>
+#include <planning_msgs/srv/set_string.hpp>
+#include <planning_msgs/srv/ghost_car_command.hpp>
+#include <planning_msgs/srv/tactical_states_command.hpp>
 
 #include "network_bridge/subscription_manager.hpp"
 #include "network_interfaces/network_interface_base.hpp"
@@ -233,36 +233,36 @@ protected:
   {
     std::string service_name, remote_name;
     int timeout_ms;
-    rclcpp::Service<iac_msgs::srv::SetString>::SharedPtr server;
+    rclcpp::Service<planning_msgs::srv::SetString>::SharedPtr server;
   };
   struct SetStringClientBridge
   {
     std::string service_name, remote_name;
-    rclcpp::Client<iac_msgs::srv::SetString>::SharedPtr client;
+    rclcpp::Client<planning_msgs::srv::SetString>::SharedPtr client;
   };
 
   struct GhostCarCommandServerBridge
   {
     std::string service_name, remote_name;
     int timeout_ms;
-    rclcpp::Service<iac_msgs::srv::GhostCarCommand>::SharedPtr server;
+    rclcpp::Service<planning_msgs::srv::GhostCarCommand>::SharedPtr server;
   };
   struct GhostCarCommandClientBridge
   {
     std::string service_name, remote_name;
-    rclcpp::Client<iac_msgs::srv::GhostCarCommand>::SharedPtr client;
+    rclcpp::Client<planning_msgs::srv::GhostCarCommand>::SharedPtr client;
   };
 
   struct OpponentStatesCommandServerBridge
   {
     std::string service_name, remote_name;
     int timeout_ms;
-    rclcpp::Service<iac_msgs::srv::OpponentStatesCommand>::SharedPtr server;
+    rclcpp::Service<planning_msgs::srv::TacticalStatesCommand>::SharedPtr server;
   };
   struct OpponentStatesCommandClientBridge
   {
     std::string service_name, remote_name;
-    rclcpp::Client<iac_msgs::srv::OpponentStatesCommand>::SharedPtr client;
+    rclcpp::Client<planning_msgs::srv::TacticalStatesCommand>::SharedPtr client;
   };
 
   void load_service_parameters();
@@ -282,7 +282,7 @@ protected:
     const std::string & service_name, const std::string & remote_name);
   bool call_remote_set_string(
     const SetStringServerBridge & bridge,
-    const iac_msgs::srv::SetString::Request & request, bool & success);
+    const planning_msgs::srv::SetString::Request & request, bool & success);
   void handle_set_string_request(std::span<const uint8_t> payload);
 
   void setup_ghost_car_command_server_bridge(
@@ -291,7 +291,7 @@ protected:
     const std::string & service_name, const std::string & remote_name);
   bool call_remote_ghost_car_command(
     const GhostCarCommandServerBridge & bridge,
-    const iac_msgs::srv::GhostCarCommand::Request & request, bool & success);
+    const planning_msgs::srv::GhostCarCommand::Request & request, bool & success);
   void handle_ghost_car_command_request(std::span<const uint8_t> payload);
 
   void setup_opponent_states_command_server_bridge(
@@ -300,7 +300,7 @@ protected:
     const std::string & service_name, const std::string & remote_name);
   bool call_remote_opponent_states_command(
     const OpponentStatesCommandServerBridge & bridge,
-    const iac_msgs::srv::OpponentStatesCommand::Request & request, bool & success);
+    const planning_msgs::srv::TacticalStatesCommand::Request & request, bool & success);
   void handle_opponent_states_command_request(std::span<const uint8_t> payload);
 
   void handle_new_service_response(std::span<const uint8_t> payload);

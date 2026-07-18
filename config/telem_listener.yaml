@@ -22,7 +22,7 @@
     "/set_max_car_speed.remote_name": "/set_max_car_speed"
     "/set_max_car_speed.timeout_ms": 1000
 
-    "/ghost/request.type": "iac_msgs/srv/GhostCarCommand"
+    "/ghost/request.type": "planning_msgs/srv/GhostCarCommand"
     "/ghost/request.remote_name": "/ghost/request"
     "/ghost/request.timeout_ms": 1000
 
@@ -30,14 +30,14 @@
     "/trajectory/raceline_override.remote_name": "/trajectory/raceline_override"
     "/trajectory/raceline_override.timeout_ms": 1000
 
-    "/trajectory/state_override.type": "iac_msgs/srv/SetString"
+    "/trajectory/state_override.type": "planning_msgs/srv/SetString"
     "/trajectory/state_override.remote_name": "/trajectory/state_override"
     "/trajectory/state_override.timeout_ms": 1000
 
-    "/trajectory/parameter_override.type": "iac_msgs/srv/SetString"
+    "/trajectory/parameter_override.type": "planning_msgs/srv/SetString"
     "/trajectory/parameter_override.remote_name": "/trajectory/parameter_override"
     "/trajectory/parameter_override.timeout_ms": 1000
 
-    "/trajectory/opponent_states_request.type": "iac_msgs/srv/OpponentStatesCommand"
+    "/trajectory/opponent_states_request.type": "planning_msgs/srv/TacticalStatesCommand"
     "/trajectory/opponent_states_request.remote_name": "/trajectory/opponent_states_request"
     "/trajectory/opponent_states_request.timeout_ms": 1000

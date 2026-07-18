@@ -15,6 +15,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(iac_msgs REQUIRED)
+find_package(planning_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(PkgConfig REQUIRED)
@@ -52,7 +53,7 @@ add_library(tcp_interface SHARED
   src/network_interfaces/tcp_interface.cpp
 )
 
-ament_target_dependencies(network_bridge pluginlib rclcpp std_msgs iac_msgs)
+ament_target_dependencies(network_bridge pluginlib rclcpp std_msgs iac_msgs planning_msgs)
 ament_target_dependencies(udp_interface pluginlib rclcpp)
 ament_target_dependencies(tcp_interface pluginlib rclcpp)
 

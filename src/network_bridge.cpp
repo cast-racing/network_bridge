@@ -43,9 +43,9 @@ namespace
 constexpr char kServiceRequestPacket[] = "__network_bridge_service_request__";
 constexpr char kServiceResponsePacket[] = "__network_bridge_service_response__";
 constexpr char kSetFloat32Type[] = "iac_msgs/srv/SetFloat32";
-constexpr char kSetStringType[] = "iac_msgs/srv/SetString";
-constexpr char kGhostCarCommandType[] = "iac_msgs/srv/GhostCarCommand";
-constexpr char kOpponentStatesCommandType[] = "iac_msgs/srv/OpponentStatesCommand";
+constexpr char kSetStringType[] = "planning_msgs/srv/SetString";
+constexpr char kGhostCarCommandType[] = "planning_msgs/srv/GhostCarCommand";
+constexpr char kOpponentStatesCommandType[] = "planning_msgs/srv/TacticalStatesCommand";
 
 template<typename T>
 void append_pod(std::vector<uint8_t> & buffer, const T & value)
@@ -1000,11 +1000,11 @@ void NetworkBridge::setup_set_string_server_bridge(
   bridge.remote_name = remote_name;
   bridge.timeout_ms = timeout_ms;
 
-  bridge.server = this->create_service<iac_msgs::srv::SetString>(
+  bridge.server = this->create_service<planning_msgs::srv::SetString>(
     service_name,
     [this, service_name](
-      const std::shared_ptr<iac_msgs::srv::SetString::Request> request,
-      std::shared_ptr<iac_msgs::srv::SetString::Response> response) {
+      const std::shared_ptr<planning_msgs::srv::SetString::Request> request,
+      std::shared_ptr<planning_msgs::srv::SetString::Response> response) {
       auto it = std::find_if(
         set_string_server_bridges_.begin(), set_string_server_bridges_.end(),
         [&service_name](const auto & b) {return b.service_name == service_name;});
@@ -1030,7 +1030,7 @@ void NetworkBridge::setup_set_string_client_bridge(
   SetStringClientBridge bridge;
   bridge.service_name = service_name;
   bridge.remote_name = remote_name;
-  bridge.client = this->create_client<iac_msgs::srv::SetString>(remote_name);
+  bridge.client = this->create_client<planning_msgs::srv::SetString>(remote_name);
 
   RCLCPP_INFO(
     this->get_logger(),
@@ -1042,17 +1042,17 @@ void NetworkBridge::setup_set_string_client_bridge(
 
 bool NetworkBridge::call_remote_set_string(
   const SetStringServerBridge & bridge,
-  const iac_msgs::srv::SetString::Request & request,
+  const planning_msgs::srv::SetString::Request & request,
   bool & success)
 {
-  success = call_remote_service<iac_msgs::srv::SetString>(
+  success = call_remote_service<planning_msgs::srv::SetString>(
     kSetStringType, bridge.remote_name, bridge.timeout_ms, request);
   return true;
 }
 
 void NetworkBridge::handle_set_string_request(std::span<const uint8_t> payload)
 {
-  do_handle_serialized_service_request<iac_msgs::srv::SetString>(
+  do_handle_serialized_service_request<planning_msgs::srv::SetString>(
     kSetStringType, payload, set_string_client_bridges_);
 }
 
@@ -1066,11 +1066,11 @@ void NetworkBridge::setup_ghost_car_command_server_bridge(
   bridge.remote_name = remote_name;
   bridge.timeout_ms = timeout_ms;
 
-  bridge.server = this->create_service<iac_msgs::srv::GhostCarCommand>(
+  bridge.server = this->create_service<planning_msgs::srv::GhostCarCommand>(
     service_name,
     [this, service_name](
-      const std::shared_ptr<iac_msgs::srv::GhostCarCommand::Request> request,
-      std::shared_ptr<iac_msgs::srv::GhostCarCommand::Response> response) {
+      const std::shared_ptr<planning_msgs::srv::GhostCarCommand::Request> request,
+      std::shared_ptr<planning_msgs::srv::GhostCarCommand::Response> response) {
       auto it = std::find_if(
         ghost_car_command_server_bridges_.begin(), ghost_car_command_server_bridges_.end(),
         [&service_name](const auto & b) {return b.service_name == service_name;});
@@ -1096,7 +1096,7 @@ void NetworkBridge::setup_ghost_car_command_client_bridge(
   GhostCarCommandClientBridge bridge;
   bridge.service_name = service_name;
   bridge.remote_name = remote_name;
-  bridge.client = this->create_client<iac_msgs::srv::GhostCarCommand>(remote_name);
+  bridge.client = this->create_client<planning_msgs::srv::GhostCarCommand>(remote_name);
 
   RCLCPP_INFO(
     this->get_logger(),
@@ -1108,17 +1108,17 @@ void NetworkBridge::setup_ghost_car_command_client_bridge(
 
 bool NetworkBridge::call_remote_ghost_car_command(
   const GhostCarCommandServerBridge & bridge,
-  const iac_msgs::srv::GhostCarCommand::Request & request,
+  const planning_msgs::srv::GhostCarCommand::Request & request,
   bool & success)
 {
-  success = call_remote_service<iac_msgs::srv::GhostCarCommand>(
+  success = call_remote_service<planning_msgs::srv::GhostCarCommand>(
     kGhostCarCommandType, bridge.remote_name, bridge.timeout_ms, request);
   return true;
 }
 
 void NetworkBridge::handle_ghost_car_command_request(std::span<const uint8_t> payload)
 {
-  do_handle_serialized_service_request<iac_msgs::srv::GhostCarCommand>(
+  do_handle_serialized_service_request<planning_msgs::srv::GhostCarCommand>(
     kGhostCarCommandType, payload, ghost_car_command_client_bridges_);
 }
 
@@ -1132,11 +1132,11 @@ void NetworkBridge::setup_opponent_states_command_server_bridge(
   bridge.remote_name = remote_name;
   bridge.timeout_ms = timeout_ms;
 
-  bridge.server = this->create_service<iac_msgs::srv::OpponentStatesCommand>(
+  bridge.server = this->create_service<planning_msgs::srv::TacticalStatesCommand>(
     service_name,
     [this, service_name](
-      const std::shared_ptr<iac_msgs::srv::OpponentStatesCommand::Request> request,
-      std::shared_ptr<iac_msgs::srv::OpponentStatesCommand::Response> response) {
+      const std::shared_ptr<planning_msgs::srv::TacticalStatesCommand::Request> request,
+      std::shared_ptr<planning_msgs::srv::TacticalStatesCommand::Response> response) {
       auto it = std::find_if(
         opponent_states_command_server_bridges_.begin(),
         opponent_states_command_server_bridges_.end(),
@@ -1164,7 +1164,7 @@ void NetworkBridge::setup_opponent_states_command_client_bridge(
   OpponentStatesCommandClientBridge bridge;
   bridge.service_name = service_name;
   bridge.remote_name = remote_name;
-  bridge.client = this->create_client<iac_msgs::srv::OpponentStatesCommand>(remote_name);
+  bridge.client = this->create_client<planning_msgs::srv::TacticalStatesCommand>(remote_name);
 
   RCLCPP_INFO(
     this->get_logger(),
@@ -1176,17 +1176,17 @@ void NetworkBridge::setup_opponent_states_command_client_bridge(
 
 bool NetworkBridge::call_remote_opponent_states_command(
   const OpponentStatesCommandServerBridge & bridge,
-  const iac_msgs::srv::OpponentStatesCommand::Request & request,
+  const planning_msgs::srv::TacticalStatesCommand::Request & request,
   bool & success)
 {
-  success = call_remote_service<iac_msgs::srv::OpponentStatesCommand>(
+  success = call_remote_service<planning_msgs::srv::TacticalStatesCommand>(
     kOpponentStatesCommandType, bridge.remote_name, bridge.timeout_ms, request);
   return true;
 }
 
 void NetworkBridge::handle_opponent_states_command_request(std::span<const uint8_t> payload)
 {
-  do_handle_serialized_service_request<iac_msgs::srv::OpponentStatesCommand>(
+  do_handle_serialized_service_request<planning_msgs::srv::TacticalStatesCommand>(
     kOpponentStatesCommandType, payload, opponent_states_command_client_bridges_);
 }
 
