@@ -82,6 +82,8 @@
       - "/perception/camera/poses_markers/stereo_left"
       - "/front_opponent_indicator"
       - "/rear_opponent_indicator"
+      - "/bevfusion/boxes"
+      - "/apex_loc/tire_model/alpha_front_lidar"
     
     # Defaults can be overridden for all topics
     # /trajectory/mpc_viz:
