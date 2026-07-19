@@ -301,8 +301,21 @@ void NetworkBridge::receive_data(std::span<const uint8_t> data)
 
     // Set QoS to Transient Local Durability
     qos.transient_local();
-    publishers_[topic] = this->create_generic_publisher(
-      publish_namespace_ + topic, type, qos);
+    try {
+      publishers_[topic] = this->create_generic_publisher(
+        publish_namespace_ + topic, type, qos);
+    } catch (const std::exception & e) {
+      // Keep a null entry so the failure is only logged once per topic
+      publishers_[topic] = nullptr;
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Dropping topic %s: cannot create publisher for type %s (%s)",
+        topic.c_str(), type.c_str(), e.what());
+    }
+  }
+
+  if (!publishers_[topic]) {
+    return;
   }
 
   rclcpp::SerializedMessage msg(payload.size());
